@@ -14,6 +14,7 @@ import (
 	"github.com/ChimeraCoder/anaconda"
 	pb "github.com/leandro-lugaresi/gRPC-twitter/twitter"
 	"golang.org/x/net/context"
+	"golang.org/x/net/trace"
 	"google.golang.org/grpc"
 )
 
@@ -29,6 +30,7 @@ type server struct{}
 // parameter called `User` and returns
 // the user `Timeline` (list of `Tweets`).
 func (s *server) GetTimeline(cx context.Context, token *pb.Token) (*pb.Timeline, error) {
+	traceLog(cx, fmt.Sprint("get timeline started"))
 	api := anaconda.NewTwitterApi(token.AccessToken, token.SecretToken)
 	v := url.Values{}
 	timeline, err := api.GetHomeTimeline(v)
@@ -39,7 +41,8 @@ func (s *server) GetTimeline(cx context.Context, token *pb.Token) (*pb.Timeline,
 	for i, tweet := range timeline {
 		newTweet, err := convertTweet(tweet)
 		if err != nil {
-			return nil, err
+			traceLog(cx, fmt.Sprintf("error: %v, tweet: %v", err, tweet))
+			continue
 		}
 		t[i] = newTweet
 	}
@@ -54,12 +57,14 @@ func (s *server) UserStream(token *pb.Token, str pb.Twitter_UserStreamServer) er
 	uStr := api.UserStream(nil)
 	ctx := str.Context()
 	defer uStr.Stop()
+	traceLog(ctx, fmt.Sprint("UserStream loop started"))
 	for {
 		select {
 		case t := <-uStr.C:
 			tweet, err := convertTweet(t)
 			if err != nil {
-				return err
+				traceLog(ctx, fmt.Sprintf("error: %v, tweet: %v", err, tweet))
+				continue
 			}
 			err = str.Send(tweet)
 			if err != nil {
@@ -78,12 +83,14 @@ func (s *server) Filter(search *pb.Search, str pb.Twitter_FilterServer) error {
 	pStr := api.PublicStreamFilter(v)
 	ctx := str.Context()
 	defer pStr.Stop()
+	traceLog(ctx, fmt.Sprint("Filter loop started"))
 	for {
 		select {
 		case t := <-pStr.C:
 			tweet, err := convertTweet(t)
 			if err != nil {
-				return err
+				traceLog(ctx, fmt.Sprintf("error: %v, tweet: %v", err, tweet))
+				continue
 			}
 			err = str.Send(tweet)
 			if err != nil {
@@ -121,7 +128,13 @@ func convertTweet(tweet interface{}) (*pb.Tweet, error) {
 		}, nil
 	}
 
-	return nil, errors.New("Tweet type unknown")
+	return nil, errors.New(fmt.Sprintf("Tweet type unknown: %v", tweet))
+}
+
+func traceLog(ctx context.Context, str string) {
+	if tr, ok := trace.FromContext(ctx); ok {
+		tr.LazyPrintf(str, false)
+	}
 }
 
 func main() {

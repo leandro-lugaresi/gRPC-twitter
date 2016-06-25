@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	server      = flag.String("server", "localhost:36060", "server address")
+	server      = flag.String("server", "localhost:6666", "server address")
 	mode        = flag.String("mode", "search", `one of "search" or "timeline"`)
 	query       = flag.String("query", "test", "query string")
 	accessToken = flag.String("accessToken", os.Getenv("TWITTER_ACCESS_TOKEN"), "access token")
@@ -45,7 +45,7 @@ func main() {
 
 // timeline runs a Timeline RPC and prints the result stream.
 func timeline(client pb.TwitterClient) {
-	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	res, err := client.GetTimeline(ctx, getToken())
 	if err != nil {
@@ -53,7 +53,7 @@ func timeline(client pb.TwitterClient) {
 	}
 	fmt.Println("Last Tweets:")
 	for _, t := range res.GetTweets() {
-		fmt.Println("%v : %s", t.User.ScreenName, t.Text)
+		fmt.Printf("%v : %s \n", t.User.ScreenName, t.Text)
 	}
 }
 
@@ -75,7 +75,7 @@ func search(client pb.TwitterClient, query string) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println("%v : %s", res.User.ScreenName, res.Text)
+		fmt.Printf("%v : %s \n", res.User.ScreenName, res.Text)
 	}
 }
 
