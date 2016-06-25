@@ -13,9 +13,14 @@ service Twitter {
   rpc GetTimeline(Token) returns (Timeline) {}
 
   // We have a method called `UserStream` which takes
-  // parameter called `Token` and `Search` and returns
+  // parameter called `Token`and returns
   // an stream of `Tweets`
-  rpc UserStream(Search) returns (stream Tweet) {}
+  rpc UserStream(Token) returns (stream Tweet) {}
+
+  // We have a method called `Filter` which takes
+  // parameter called `Search` and returns
+  // an stream of `Tweets`
+  rpc Filter(Search) returns (stream Tweet) {}
 }
 
 message Token {
