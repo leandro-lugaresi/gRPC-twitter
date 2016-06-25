@@ -3,16 +3,17 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/ChimeraCoder/anaconda"
-	pb "github.com/leandro-lugaresi/gRPC-twitter/twitter"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
 	"log"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
 	"os"
+
+	"github.com/ChimeraCoder/anaconda"
+	pb "github.com/leandro-lugaresi/gRPC-twitter/twitter"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
 var (
@@ -35,7 +36,57 @@ func (s *server) GetTimeline(cx context.Context, token *pb.Token) (*pb.Timeline,
 	}
 	t := make([]pb.Tweet, len(timeline))
 	for i, tweet := range timeline {
-		t[i] = pb.Tweet{
+		t[i] = convertTweet(tweet)
+	}
+	return &pb.Timeline{t}, nil
+}
+
+// We have a method called `UserStream` which takes
+// parameter called `Search` and returns
+// an stream of `Tweets`.
+func (s *server) UserStream(token *pb.Token, str pb.Twitter_UserStreamServer) error {
+	api := anaconda.NewTwitterApi(token.AccessToken, token.SecretToken)
+	uStr := api.UserStream(nil)
+	ctx := str.Context()
+	defer uStr.Stop()
+	for {
+		select {
+		case t := <-uStr.C:
+			err := str.Send(convertTweet(t))
+			if err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (s *server) Filter(search *Search, str pb.Twitter_FilterServer) error {
+	api := anaconda.NewTwitterApi(search.Token.AccessToken, search.Token.SecretToken)
+	v := url.Values{}
+	v.Set("track", search.Text)
+	pStr := api.PublicStreamFilter(v)
+	ctx := str.Context()
+	defer pStr.Stop()
+	for {
+		select {
+		case t := <-pStr.C:
+			err := str.Send(convertTweet(t))
+			if err != nil {
+				return err
+			}
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func convertTweet(tweet interface{}) pb.Tweet {
+	switch v := tweet.(type) {
+	case anaconda.Tweet:
+		return pb.Tweet{
 			Id:            tweet.Id,
 			Text:          tweet.Text,
 			User:          pb.User{Id: tweet.User.Id, Name: tweet.User.Name, ScreenName: tweet.User.ScreenName},
@@ -44,15 +95,18 @@ func (s *server) GetTimeline(cx context.Context, token *pb.Token) (*pb.Timeline,
 			Favorited:     tweet.Favorited,
 			FavoriteCount: tweet.FavoriteCount,
 		}
+	case anaconda.EventTweet:
+		t = v.TargetObject
+		return pb.Tweet{
+			Id:            tweet.Id,
+			Text:          fmt.Sprintf("%S by %s: %s", v.Event.Event, v.Source.ScreenName, t.Text),
+			User:          pb.User{Id: t.User.Id, Name: t.User.Name, ScreenName: t.User.ScreenName},
+			Retweeted:     t.Retweeted,
+			RetweetCount:  t.RetweetCount,
+			Favorited:     t.Favorited,
+			FavoriteCount: t.FavoriteCount,
+		}
 	}
-	return &pb.Timeline{t}, nil
-}
-
-// We have a method called `UserStream` which takes
-// parameter called `Search` and returns
-// an stream of `Tweets`.
-func (s *server) UserStream(search *Search, str pb.Twitter_UserStreamServer) error {
-
 }
 
 func main() {
